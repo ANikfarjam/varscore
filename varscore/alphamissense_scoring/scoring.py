@@ -1,6 +1,5 @@
 import argparse
 import logging
-import os
 from typing import List
 
 import duckdb
@@ -64,17 +63,18 @@ def init_db(parquet_files: List[str]) -> duckdb.DuckDBPyConnection:
 
 
 def score_variants(
-    con: duckdb.DuckDBPyConnection,
     variants_loc: str,
-    out_path: str,
-) -> None:
-    """Query AlphaMissense scores for a batch of variants and save as TSV.
+    con: duckdb.DuckDBPyConnection,
+) -> pd.DataFrame:
+    """Query AlphaMissense scores for variants and return the merged DataFrame.
 
     Args:
-        con: DuckDB connection returned by init_db. Reuse across batches.
         variants_loc: Input variants TSV (no header; columns: chr, pos, ref,
             alt, variant_id).
-        out_path: Output TSV path for variants merged with AlphaMissense scores.
+        con: DuckDB connection returned by init_db.
+
+    Returns:
+        variants DataFrame merged with AlphaMissense scores.
     """
     logger.info(f"Loading variants from {variants_loc}")
     variants_df = pd.read_csv(
@@ -112,10 +112,7 @@ def score_variants(
 
     merged = variants_df.merge(am_results, on=MERGE_KEYS, how="left")
     logger.info(f"Merged result: {len(merged)} rows")
-
-    os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
-    merged.to_csv(out_path, sep="\t", index=False)
-    logger.info(f"Saved to {out_path}")
+    return merged
 
 
 def _detect_col(cols: list, candidates: list, label: str) -> str:
@@ -135,8 +132,10 @@ def _detect_col(cols: list, candidates: list, label: str) -> str:
 def main():
     args = _parse_args()
     con = init_db(args.parquet_files)
-    score_variants(con, args.variants_loc, args.out_path)
+    merged = score_variants(args.variants_loc, con)
     con.close()
+    merged.to_csv(args.out_path, sep="\t", index=False)
+    logger.info(f"Saved to {args.out_path}")
 
 
 def _parse_args():
